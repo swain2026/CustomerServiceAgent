@@ -217,14 +217,7 @@ def update_conversation_history(state: CustomerServiceState) -> dict:
 
 def retrieve_knowledge_base(state: CustomerServiceState) -> dict:
 
-    """从知识库检索相关信息"""
-
-    user_vip_level = state['user_info'].get('vip_level', 'Regular')
-
-    order_info = state.get('order_info', {})
-
-    latest_order = order_info.get('latest_order', {})
-    
+    """从知识库检索相关信息"""  
 
     # 只有咨询类、投诉类、技术支持需要搜索Pinecone
 
@@ -246,11 +239,11 @@ def retrieve_knowledge_base(state: CustomerServiceState) -> dict:
 
         if state['intent'] == '咨询类':
 
-            knowledge_context = f"根据您的咨询，我们提供以下信息：[产品/服务详细信息]。VIP用户 {user_vip_level} 可享受特殊优惠。"
+            knowledge_context = f"根据您的咨询，我们提供以下信息：[产品/服务详细信息]。VIP用户可享受特殊优惠。"
 
         elif state['intent'] == '投诉类':
 
-            knowledge_context = f"投诉处理流程：[受理、调查、解决步骤]。VIP用户 {user_vip_level} 将获得专属客服经理处理。"
+            knowledge_context = f"投诉处理流程：[受理、调查、解决步骤]。VIP用户将获得专属客服经理处理。"
 
         elif state['intent'] == '技术支持':
 
@@ -267,37 +260,9 @@ def retrieve_knowledge_base(state: CustomerServiceState) -> dict:
 
                 pinecone_context += f"{i}. [相似度: {result['score']:.2f}] {result.get('text', 'N/A')}\n"
 
-            knowledge_context += pinecone_context
-
-    elif state['intent'] == '订单类':
-
-        order_status = latest_order.get('status', 'N/A')
-
-        tracking_num = latest_order.get('tracking_number', 'N/A')
-
-        estimated_delivery = latest_order.get('estimated_delivery', 'N/A')
-        
-
-        knowledge_context = f"""
-
-        订单信息：
-
-        - 订单号：{latest_order.get('order_id', 'N/A')}
-
-        - 当前状态：{order_status}
-
-        - 物流单号：{tracking_num}
-
-        - 预计送达：{estimated_delivery}
-
-        - 配送地址：{latest_order.get('shipping_address', 'N/A')}
-
-        - 支付方式：{latest_order.get('payment_method', 'N/A')}
-        """
+            knowledge_context += pinecone_context  
     else:
-
         knowledge_context = "常见问题解答：[通用FAQ信息]"
-    
 
     return {
 
@@ -305,17 +270,7 @@ def retrieve_knowledge_base(state: CustomerServiceState) -> dict:
 
             "knowledge_context": knowledge_context,
 
-            "retrieved_faq": f"相关FAQ: [{state['intent']}相关常见问题]",
-
-            "product_info": f"产品信息：[{state['intent']}涉及的相关产品/服务]",
-
-            "user_priority": user_vip_level,
-
-            "latest_order": latest_order,
-
-            "pinecone_results": pinecone_results,
-
-            "pinecone_result_count": len(pinecone_results)
+            "retrieved_faq": f"相关FAQ: [{state['intent']}相关常见问题]"       
 
         }
 

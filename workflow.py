@@ -27,19 +27,17 @@ def build_customer_agent_graph():
     """构建智能客服工作流"""
 
     workflow = StateGraph(CustomerServiceState)
-    
 
     # 添加节点
+    workflow.add_node("classify_intent", classify_intent)
+
+    workflow.add_node("analyze_emotion", analyze_emotion)
 
     workflow.add_node("get_user_info", get_user_info)
-
-    workflow.add_node("classify_intent", classify_intent)
 
     workflow.add_node("get_order_info", get_order_info)
 
     workflow.add_node("retrieve_knowledge", retrieve_knowledge_base)
-
-    workflow.add_node("analyze_emotion", analyze_emotion)
 
     workflow.add_node("generate_response", generate_response)
 
@@ -48,21 +46,21 @@ def build_customer_agent_graph():
     workflow.add_node("human_agent", escalate_to_human)
     
 
-    # 设置边
+    # 设置边界
 
-    workflow.set_entry_point("get_user_info")
+    workflow.set_entry_point("classify_intent")
     
 
-    # 确保用户ID后，进行意图分类
+    # 意图分类后，识别情绪
 
-    workflow.add_edge("get_user_info", "classify_intent")
+    workflow.add_edge("classify_intent", "analyze_emotion")
     
 
     # 意图分类后，如果是订单相关则获取订单信息
 
     workflow.add_conditional_edges(
 
-        "classify_intent",
+        "analyze_emotion",
 
         lambda state: "order_info" if "order" in state.get("intent", "").lower() else "no_order",
 
@@ -70,26 +68,11 @@ def build_customer_agent_graph():
 
             "order_info": "get_order_info",
 
-            "no_order": "analyze_emotion"
+            "no_order": "generate_response"
 
         }
     )
-    
 
-    # 获取订单信息后继续知识库检索
-
-    workflow.add_edge("get_order_info", "retrieve_knowledge")
-    
-
-    # 意图分类后直接进入知识库检索（非订单类）
-
-    workflow.add_edge("classify_intent", "retrieve_knowledge")
-    
-
-    # 知识库检索后继续情绪分析
-
-    workflow.add_edge("retrieve_knowledge", "analyze_emotion")
-    
 
     # 情绪分析后判断是否需要人工介入
 
