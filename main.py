@@ -10,8 +10,8 @@ load_dotenv()
 # Initialize model first (must be after load_dotenv)
 from model import thinking_model
 
-from agent import CustomerServiceSession
-from state import CustomerServiceState
+from agent import CustomerServiceAgent
+from agentstate import AgentState
 
 
 def get_user_input() -> str:
@@ -19,9 +19,12 @@ def get_user_input() -> str:
     return input("You: ")
 
 
-def display_response(response: str) -> None:
+def display_response(state: AgentState) -> None:
     """Display the agent's response."""
-    print(f"Agent: {response}\n")
+    for i, msg in enumerate(state['messages']):
+        print(f"[{i}] {msg.type}: {msg.content}")
+        if hasattr(msg, 'tool_calls'):
+            print(f"    Tool Calls: {msg.tool_calls}")
 
 
 def main():
@@ -50,14 +53,14 @@ def main():
     print("Press Ctrl+C to exit.\n")
     
     # Create a new session (in a real app, you might load user_id from auth)
-    session = CustomerServiceSession()
+    agent = CustomerServiceAgent()
     
     while True:
         try:
             user_input = get_user_input()
             if user_input.strip():
-                response = session.process_input(user_input)
-                display_response(response)
+                final_state = agent.process_input(user_input)
+                display_response(final_state)
         except KeyboardInterrupt:
             print("\nGoodbye!")
             sys.exit(0)
