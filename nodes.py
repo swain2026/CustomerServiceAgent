@@ -1,16 +1,18 @@
 from typing import Optional, List, Dict, Any
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langgraph.graph import END
 
 from agentstate import AgentState
 from model import thinking_model
 
 from tools import (
-    get_order_info,
+    get_latest_order,
     get_user_info, 
-    retrieve_knowledge_base
+    retrieve_knowledge_base,
+    get_product_info
  )
 
-tools = [get_user_info, get_order_info, retrieve_knowledge_base]
+tools = [get_user_info, get_latest_order, retrieve_knowledge_base, get_product_info]
 
 
 def classify_intent(state: AgentState) -> dict:
@@ -18,15 +20,17 @@ def classify_intent(state: AgentState) -> dict:
     """意图识别节点"""
 
     system_prompt = f"""
-    分析用户输入的意图，分类为以下几种之一：
-    - 咨询类：询问产品、服务或政策
-    - 投诉类：表达不满或问题
-    - 售后类：退货、维修、换货等
-    - 订单类：查询订单状态、物流、支付等
-    - 技术支持：解决技术问题
-    - 其他：无法明确分类    
-    请直接输出分类结果，不要添加其他文字。
-    """.strip()
+你是一个意图分类器。分析用户输入的意图，只输出以下六个选项之一，不要输出任何其他文字或解释：
+
+咨询类
+投诉类
+售后类
+订单类
+技术支持
+其他
+
+输出格式：只输出分类结果，不要标点符号。
+""".strip()
 
     # print("prompt:", prompt)
 
@@ -35,9 +39,23 @@ def classify_intent(state: AgentState) -> dict:
         ("system", system_prompt)
     ])
 
-    response = thinking_model.invoke(chat_prompt_template.format_messages())
+    # Use classification_model for more deterministic output
+    from model import classification_model
+    response = classification_model.invoke(chat_prompt_template.format_messages())
 
     intent = response.content.strip()
+    
+    # Post-process: extract only the valid intent category
+    valid_intents = ["咨询类", "投诉类", "售后类", "订单类", "技术支持", "其他"]
+    for valid_intent in valid_intents:
+        if valid_intent in intent:
+            intent = valid_intent
+            break
+    else:
+        # If no valid intent found, default to "其他"
+        intent = "其他"
+
+    state["intent"] = intent
 
     print("intent:", intent)
 
@@ -49,13 +67,15 @@ def analyze_emotion(state: AgentState) -> dict:
     """情绪分析节点"""
 
     system_prompt = f"""
-    分析用户输入的情绪状态，输出以下之一：
-    - 积极
-    - 中性
-    - 消极
-    - 愤怒    
-    请直接输出情绪类别，不要添加其他文字。
-    """.strip()
+你是一个情绪分类器。分析用户输入的情绪状态，只输出以下四个选项之一，不要输出任何其他文字或解释：
+
+积极
+中性
+消极
+愤怒
+
+输出格式：只输出一个词，不要标点符号。
+""".strip()
 
       # 创建一个提示模板，明确要求模型进行思考
     chat_prompt_template = ChatPromptTemplate.from_messages([
@@ -63,10 +83,23 @@ def analyze_emotion(state: AgentState) -> dict:
         MessagesPlaceholder(variable_name="messages"), # 占位符，用于插入历史消息
     ])
     
-    response = thinking_model.invoke(chat_prompt_template.format_messages(messages=state['messages']))
+    # Use classification_model for more deterministic output
+    from model import classification_model
+    response = classification_model.invoke(chat_prompt_template.format_messages(messages=state['messages']))
 
     emotion = response.content.strip()
+    
+    # Post-process: extract only the valid emotion category
+    valid_emotions = ["积极", "中性", "消极", "愤怒"]
+    for valid_emotion in valid_emotions:
+        if valid_emotion in emotion:
+            emotion = valid_emotion
+            break
+    else:
+        # If no valid emotion found, default to "中性"
+        emotion = "中性"
 
+    state["emotion"] = emotion
 
     print("emotion:", emotion)
     
@@ -74,59 +107,51 @@ def analyze_emotion(state: AgentState) -> dict:
 
 def generate_response(state: AgentState):
     """
-    Agent节点：接收状态，调用带有提示的模型，返回新消息。
-    """
+    Agent节点: 接收状态,调用带有提示的模型,返回新消息。
+    """    
+    # 获取用户输入
+    user_input = ""
+    first_msg = state['messages'][0]
+    if hasattr(first_msg, 'content'):
+        user_input = first_msg.content
+    elif isinstance(first_msg, dict):
+        user_input = first_msg.get("content", "")
+
+    # 使用 f-string 直接构建系统提示，避免模板格式化问题
     system_prompt = f"""
-    你是一名智能电商客服助手，需要及时回答用户关于产品的咨询。如果问题与具体产品无关，可以直接回答。
+你是一名智能电商客服助手，需要及时回答用户关于产品的咨询。
 
-    请以 `Answer: [你的答案]` 的格式输出最终结果。
+**当前上下文信息：**
+- 用户ID: {state['user_id']}
+- 用户意图: {state['intent']}
+- 用户输入: {user_input}
 
-    **示例：**
-    ```
-    Answer: 还有其他可以帮您的吗？
-    ```
+**产品信息：**
+- 你可以通过调用 get_product_info 工具查询产品价格和促销信息
+- 支持的产品包括：无线蓝牙耳机、智能手表、笔记本电脑支架、降噪耳机、无线充电器等
 
-    如果涉及具体产品信息，你需要以 **Thought（思考）→ Action（行动）→ Observation（观察）** 的循环方式处理问题：
-    - 使用 **Thought** 描述你的分析过程
-    - 使用 **Action** 调用可用工具之一，然后等待 **Observation**
-    - 当你有最终答案时，以 `Answer: [你的答案]` 格式输出
+**重要指示：**
+1. 当需要查询用户信息、订单信息或产品信息时，请调用相应的工具函数
+2. 如果问题与具体产品或订单相关，先调用工具获取信息再回答
+3. 如果问题可以基于常识直接回答，无需调用工具
+4. 你必须用中文回复最终结果
+""".strip()
 
-    **可用工具：**
-    1. `get_user_info(user_id: str)`：验证用户ID并获取用户信息，包括注册日期、最近购买日期、购买次数、总消费金额、VIP等级、联系方式、偏好设置、工单数量和满意度评分
-    2. `get_order_info(user_id: str)`：获取用户的订单信息，包括订单ID、订单状态、订单日期、预计送达时间、商品列表（名称、数量、价格）和订单总金额
-    3. `retrieve_knowledge_base()`：从知识库检索相关信息，根据用户意图（咨询类、投诉类、技术支持）提供对应的知识内容和FAQ信息
-
-    **使用 Action 时，必须按以下格式格式化：**
-    ```
-    Action: 工具名称: 参数
-    ```
-
-    **示例流程：**
-    ```
-    Thought: 我需要查询用户ID为12345的订单信息
-    Action: get_order_info: 12345
-
-    Observation: {"order_info": {"orders": [{"order_id": "ORD20240501001", "order_status": "shipped", ...}], "total_orders": 3}}
-
-    Thought: 我现在已获得回答问题所需的全部信息
-    Answer: 您最近有3个订单，最新订单ORD20240501001已发货，预计5月10日送达。
-    ```
-
-    **注意：你必须用中文回复最终结果**
+    # 绑定工具到模型
+    model_with_tools = thinking_model.bind_tools(tools)
     
-    现在轮到你了：
-    """.strip()
-
-    # 创建一个提示模板，明确要求模型进行思考
-    chat_prompt_template = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        MessagesPlaceholder(variable_name="messages"), # 占位符，用于插入历史消息
-    ])
-
-    model_with_tools_and_prompt = prompt | thinking_model.bind_tools(tools) # 使用管道操作符链接prompt和model
-
-    # 将整个消息历史传递给经过提示模板处理的模型链
-    response = model_with_tools_and_prompt.invoke({"messages": state["messages"]})
+    # 构建消息列表：系统提示 + 对话历史
+    messages = [{"role": "system", "content": system_prompt}]
+    
+    # 添加对话历史（排除第一条消息，因为已经作为user_input使用了）
+    for msg in state['messages']:
+        if hasattr(msg, 'content'):
+            messages.append({"role": "user", "content": msg.content})
+        elif isinstance(msg, dict):
+            messages.append(msg)
+    
+    # 调用模型
+    response = model_with_tools.invoke(messages)
     
     # 处理模型的响应，无论是工具调用还是直接回复
     return {"messages": [response]}
@@ -149,18 +174,23 @@ def tool_execution_node(state):
                 tool_call_id=tool_call["id"]
             )
         )
+    print("outputs:", outputs)
     return {"messages": outputs}
 
 # --- 5. 定义边缘条件 (Edge Condition) ---
 def should_continue(state):
     """
     检查最后一条消息是否包含工具调用。
+    返回 "tools" 如果需要调用工具，否则返回 "end"。
     """
     messages = state['messages']
     last_message = messages[-1]
+    # 检查是否有 tool_calls 属性且不为空
     if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
+        print(f"Tool calls detected: {last_message.tool_calls}")
         return "tools"
-    return END
+    print("No tool calls, ending workflow")
+    return "end"
 
 
 def generate_response2(state: AgentState):

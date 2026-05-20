@@ -28,7 +28,7 @@ class CustomerServiceAgent:
             "user_id": self.user_id,
             "user_info": {},
             "order_info": {},
-            "needs_human_intervention": False            
+            "needs_human_intervention": False       
         }
         
         # Run the agent

@@ -14,12 +14,18 @@ from nodes import (
 from edges import should_escalate
 
 from tools import (
-    get_order_info,
+    get_latest_order,
     get_user_info, 
+    get_product_info,
     retrieve_knowledge_base
  )
 
-tools = [get_user_info, get_order_info, retrieve_knowledge_base]
+tools = [
+    get_user_info,
+    get_latest_order,
+    get_product_info,
+    retrieve_knowledge_base
+]
 
 def build_customer_agent_graph():
 
@@ -60,7 +66,7 @@ def build_customer_agent_graph():
         should_continue,
         {
             "tools": "tools",
-            END: END
+            "end": END
         }
     )
     workflow.add_edge("tools", "generate_response")
