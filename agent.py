@@ -1,7 +1,7 @@
 import uuid
 from agentstate import AgentState
 from workflow import build_customer_agent_graph
-from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 
 class CustomerServiceAgent:
     """Maintains a conversation session with a specific user."""
@@ -12,6 +12,8 @@ class CustomerServiceAgent:
         self.user_info: dict = {}
         self.customer_agent = build_customer_agent_graph()
         self.system_prompt = ""
+        # Maintain conversation history across calls
+        self.conversation_history: list = []
     
     def __del__(self):
         """Cleanup resources when the session is released."""
@@ -20,9 +22,9 @@ class CustomerServiceAgent:
     
     def process_input(self, user_input: str) -> AgentState:
         """Process user input and return agent state."""
-        # Build initial state with existing session context
+        # Build initial state with conversation history
         initial_state: AgentState = {
-            "messages":[HumanMessage(content=user_input)],
+            "messages": self.conversation_history + [HumanMessage(content=user_input)],
             "intent": "",
             "emotion": "",
             "user_id": self.user_id,
@@ -36,14 +38,11 @@ class CustomerServiceAgent:
             final_state = self.customer_agent.invoke(initial_state)
         except Exception as e:
             error_message = f"Sorry, I encountered an error processing your request: {str(e)}"
-            # Log the error for debugging (you can add proper logging later)
             print(f"Agent error: {e}")
             raise Exception(error_message)
         
-        # Update session state with results
-        # self.user_info = result.get("user_info", self.user_info)
-        # self.context_info = result.get("context_info", self.context_info)
-        # self.conversation_history.append(f"User: {user_input}")
-        # self.conversation_history.append(f"Agent: {result['response']}")
+        # Update conversation history with all messages from the state
+        # The state contains the full message history after processing
+        self.conversation_history = final_state.get("messages", [])
         
         return final_state
